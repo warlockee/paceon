@@ -1,0 +1,9 @@
+paceon
+paceon-ctl
+*.o
+*.sqlite
+mgr/.venv/
+apikey.txt
+__pycache__/
+run.sh
+.omc/
