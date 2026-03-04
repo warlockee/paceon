@@ -128,11 +128,12 @@ int botSendMessageAndGetInfo(int64_t target, sds text, int64_t reply_to, int64_t
     sds body = makeGETBotRequest("sendMessage",&res,options,optlen);
 
     if (chat_id || message_id) {
-        cJSON *json = cJSON_Parse(body), *res;
-        res = cJSON_Select(json,".result.message_id:n");
-        if (res && message_id) *message_id = (int64_t) res->valuedouble;
-        res = cJSON_Select(json,".result.chat.id:n");
-        if (res && chat_id) *chat_id = (int64_t) res->valuedouble;
+        cJSON *json = cJSON_Parse(body);
+        cJSON *field;
+        field = cJSON_Select(json,".result.message_id:n");
+        if (field && message_id) *message_id = (int64_t) field->valuedouble;
+        field = cJSON_Select(json,".result.chat.id:n");
+        if (field && chat_id) *chat_id = (int64_t) field->valuedouble;
         cJSON_Delete(json);
     }
 

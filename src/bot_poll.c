@@ -311,7 +311,7 @@ int64_t botProcessUpdates(int64_t offset, int timeout) {
                 if (off+len <= sdslen(br->request)) {
                     sds mention = sdsnewlen(br->request+off,len);
                     br->num_mentions++;
-                    br->mentions = xrealloc(br->mentions,br->num_mentions);
+                    br->mentions = xrealloc(br->mentions,br->num_mentions * sizeof(sds));
                     br->mentions[br->num_mentions-1] = mention;
                     /* Is the user addressing the bot? Set the flag. */
                     if (Bot.username && !strcmp(Bot.username,mention+1))
