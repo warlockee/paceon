@@ -80,6 +80,26 @@ def _output_diff_ratio(before: str, after: str) -> float:
     return 1.0 - (matches / max_len)
 
 
+def _has_pending_command(baseline: str, output: str) -> bool:
+    """Detect if keys were typed at a prompt but not submitted (no Enter).
+
+    Compares the last line of baseline vs output. If the only change is
+    that text was appended to the same last line, the command was typed
+    but not executed — needs an Enter.
+    """
+    base_lines = baseline.rstrip('\n').split('\n')
+    out_lines = output.rstrip('\n').split('\n')
+    if not base_lines or not out_lines:
+        return False
+    # Same number of lines, and last line got longer — text was typed, not submitted
+    if len(base_lines) == len(out_lines):
+        base_last = base_lines[-1].rstrip()
+        out_last = out_lines[-1].rstrip()
+        if len(out_last) > len(base_last) and out_last.startswith(base_last):
+            return True
+    return False
+
+
 class TerminalQueue:
     """
     Per-terminal command queue. Ensures commands are sent one at a time —
@@ -105,11 +125,15 @@ class TerminalQueue:
 
     def enqueue(self, keys: str, description: str, stable_seconds: float,
                 chat_id: int, task_id: int,
-                tasks_dict: dict[int, Any], global_lock: threading.Lock) -> None:
-        """Add a command to the queue. Starts execution if idle."""
+                tasks_dict: dict[int, Any], global_lock: threading.Lock,
+                on_complete: Any = None) -> None:
+        """Add a command to the queue. Starts execution if idle.
+        on_complete(chat_id, result_text) is called when the command finishes,
+        allowing the manager LLM to process the result."""
         with self._lock:
             self._queue.append((keys, description, stable_seconds,
-                                chat_id, task_id, tasks_dict, global_lock))
+                                chat_id, task_id, tasks_dict, global_lock,
+                                on_complete))
             if not self._running:
                 self._running = True
                 threading.Thread(target=self._drain, daemon=True).start()
@@ -127,15 +151,18 @@ class TerminalQueue:
                     self._running = False
                     return
                 (keys, description, stable_seconds,
-                 chat_id, task_id, tasks_dict, global_lock) = self._queue.pop(0)
+                 chat_id, task_id, tasks_dict, global_lock,
+                 on_complete) = self._queue.pop(0)
 
             self._cancel_event.clear()
             self._execute_one(keys, description, stable_seconds,
-                              chat_id, task_id, tasks_dict, global_lock)
+                              chat_id, task_id, tasks_dict, global_lock,
+                              on_complete)
 
     def _execute_one(self, keys: str, description: str, stable_seconds: float,
                      chat_id: int, task_id: int,
-                     tasks_dict: dict[int, Any], global_lock: threading.Lock) -> None:
+                     tasks_dict: dict[int, Any], global_lock: threading.Lock,
+                     on_complete: Any = None) -> None:
         """Send one command, wait for stability, notify."""
         started_at: float = time.time()
         try:
@@ -166,16 +193,35 @@ class TerminalQueue:
             if self._cancel_event.is_set():
                 return
 
+            # Auto-enter: if keys were typed at a prompt but not submitted
+            # (last line grew but line count didn't change), press Enter.
+            if _has_pending_command(baseline, output):
+                logger.info("Auto-enter: pending command detected on %s, sending newline",
+                            self.terminal_id)
+                send_keys(self.terminal_id, "\n")
+                self._cancel_event.wait(2)
+                if not self._cancel_event.is_set():
+                    output = _wait_stable(
+                        self.terminal_id,
+                        stable_seconds=stable_seconds,
+                        cancel_event=self._cancel_event,
+                        max_wait=MAX_STABILITY_WAIT,
+                    )
+                if self._cancel_event.is_set():
+                    return
+
             elapsed: int = int(time.time() - started_at)
 
             # Check if command actually executed
             diff: float = _output_diff_ratio(baseline, output)
             if diff < 0.05:
                 self._update_task(tasks_dict, global_lock, task_id, "no_change")
-                send_response(chat_id,
-                    f"\U0001f916 ({elapsed}s) {description}\n\n"
+                result_msg: str = (f"({elapsed}s) {description}\n\n"
                     f"Terminal output barely changed \u2014 the command "
                     f"may not have been submitted.")
+                send_response(chat_id, f"\U0001f916 {result_msg}")
+                if on_complete:
+                    on_complete(chat_id, result_msg)
                 return
 
             self._update_task(tasks_dict, global_lock, task_id, "done")
@@ -183,8 +229,12 @@ class TerminalQueue:
             # Show last 30 lines
             lines: list[str] = output.strip().split('\n')
             tail: str = '\n'.join(lines[-30:])
-            send_response(chat_id,
-                f"\U0001f916 Done ({elapsed}s): {description}\n\n{tail}")
+            result_msg = f"Done ({elapsed}s): {description}\n\n{tail}"
+            send_response(chat_id, f"\U0001f916 {result_msg}")
+
+            # Feed result back to manager LLM for follow-up
+            if on_complete:
+                on_complete(chat_id, result_msg)
 
         except Exception as e:
             logger.error("Command execution error for task #%d: %s", task_id, e)

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 CTL_PATH: str = os.environ.get("PACEON_CTL", "./paceon-ctl")
 API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL: str = os.environ.get("PACEON_MGR_MODEL", "claude-sonnet-4-20250514")
+MODEL: str = os.environ.get("PACEON_MGR_MODEL", "claude-opus-4-6")
 
 MAX_CONVERSATION_TURNS: int = 30   # sliding window
 MAX_TOOL_ROUNDS: int = 15          # max tool-use rounds per request

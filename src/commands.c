@@ -144,8 +144,15 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         goto done;
     }
 
-    /* In manager mode, route non-dot messages to mgr. */
+    /* In manager mode, route non-dot messages to mgr.
+     * Empty/whitespace-only messages are ignored to prevent
+     * accidental newlines from "quick enter" on mobile. */
     if (MgrMode && req[0] != '.') {
+        /* Skip empty/whitespace messages. */
+        const char *p = req;
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+        if (*p == '\0') goto done;
+
         if (mgr_send(br->target, req) == 0) {
             botSendMessage(br->target, "\xf0\x9f\xa4\x96 ...", 0);
         } else {
