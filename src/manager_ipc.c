@@ -28,8 +28,14 @@
 /* Reader thread: reads JSON lines from mgr stdout, forwards to Telegram. */
 void *mgr_reader_thread(void *arg) {
     UNUSED(arg);
+    static int restart_count = 0;
+    static time_t last_restart = 0;
+
     FILE *fp = fdopen(MgrReadFd, "r");
     if (!fp) return NULL;
+
+    /* Manager stayed up — reset crash counter. */
+    if (time(NULL) - last_restart > 60) restart_count = 0;
 
     char line[8192];
     while (fgets(line, sizeof(line), fp)) {
@@ -51,15 +57,30 @@ void *mgr_reader_thread(void *arg) {
 
     fclose(fp);
 
-    /* Mgr process ended -- clean up so mgr_start() can restart it.
-     * Use MgrLock (not RequestLock) to avoid deadlock with mgr_send(). */
+    /* Mgr process ended -- clean up and auto-restart. */
     pthread_mutex_lock(&MgrLock);
     MgrPid = -1;
     MgrWriteFd = -1;
     MgrReadFd = -1;
     MgrReaderRunning = 0;
     pthread_mutex_unlock(&MgrLock);
-    printf("MGR: Reader thread exiting (manager process ended).\n");
+
+    if (!ShutdownRequested) {
+        restart_count++;
+        if (restart_count > 5) {
+            printf("MGR: Too many crashes (%d). Giving up.\n", restart_count);
+            return NULL;
+        }
+        int delay = restart_count * 3; /* 3s, 6s, 9s, 12s, 15s */
+        printf("MGR: Manager died. Restart %d/5 in %ds...\n", restart_count, delay);
+        sleep(delay);
+        last_restart = time(NULL);
+        if (!ShutdownRequested && mgr_start() == 0) {
+            printf("MGR: Manager auto-restarted.\n");
+        } else if (!ShutdownRequested) {
+            printf("MGR: Auto-restart failed.\n");
+        }
+    }
     return NULL;
 }
 

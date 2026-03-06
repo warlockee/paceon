@@ -27,12 +27,17 @@ def list_terminals() -> list[dict[str, Any]]:
         logger.error("list_terminals JSON parse error: %s (output: %s)", e, out[:200])
         return []
 
+_CAPTURE_LINES: int = 80  # Roughly one screen worth of output
+
 def capture_terminal(terminal_id: str) -> str:
-    """Capture text from a terminal by ID."""
+    """Capture the last N lines of visible text from a terminal by ID."""
     out, err, rc = ctl_run(["capture", str(terminal_id)])
     if rc != 0:
         return f"[Error capturing terminal {terminal_id}: {err}]"
-    return out
+    lines = out.split('\n')
+    if len(lines) > _CAPTURE_LINES:
+        lines = lines[-_CAPTURE_LINES:]
+    return '\n'.join(lines)
 
 def send_keys(terminal_id: str, keys: str) -> str:
     """Send keystrokes to a terminal by ID."""

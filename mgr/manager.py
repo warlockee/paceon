@@ -273,7 +273,8 @@ IMPORTANT:
                 with self._global_lock:
                     self.tasks[cmd.task_id] = cmd
                 q.enqueue(cmd_keys, cmd_desc, stable_seconds, chat_id,
-                          cmd.task_id, self.tasks, self._global_lock)
+                          cmd.task_id, self.tasks, self._global_lock,
+                          on_complete=self._handle_command_result)
                 task_ids.append(cmd.task_id)
 
             if len(task_ids) == 1:
@@ -339,6 +340,10 @@ IMPORTANT:
             return f"Memory #{del_mid} not found."
 
         return f"Unknown tool: {tool_name}"
+
+    def _handle_command_result(self, chat_id: int, result_text: str) -> None:
+        """Called when an async command finishes. Feeds result back to LLM."""
+        self.process_message(chat_id, f"[Command completed] {result_text}")
 
     def process_message(self, chat_id: int, text: str) -> None:
         """Process a user message and send response(s). Serialized per chat."""

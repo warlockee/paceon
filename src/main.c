@@ -72,6 +72,7 @@ int main(int argc, char **argv) {
 
     /* Parse our custom flags. */
     const char *dbfile = "./mybot.sqlite";
+    const char *apikey = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--dangerously-attach-to-any-window") == 0) {
             DangerMode = 1;
@@ -80,12 +81,55 @@ int main(int argc, char **argv) {
             WeakSecurity = 1;
             printf("WARNING: OTP authentication disabled.\n");
         } else if (strcmp(argv[i], "--dbfile") == 0 && i+1 < argc) {
-            dbfile = argv[i+1];
+            dbfile = argv[++i];
+        } else if (strcmp(argv[i], "--apikey") == 0 && i+1 < argc) {
+            apikey = argv[++i];
         } else if (strcmp(argv[i], "--mgr") == 0 && i+1 < argc) {
-            strncpy(MgrPath, argv[i+1], sizeof(MgrPath) - 1);
+            strncpy(MgrPath, argv[++i], sizeof(MgrPath) - 1);
             MgrPath[sizeof(MgrPath) - 1] = '\0';
             printf("MGR: Manager script: %s\n", MgrPath);
         }
+    }
+
+    /* -------------------------------------------------------------------
+     * First-time-friendly: refuse to start if required keys are missing.
+     * ----------------------------------------------------------------- */
+    int missing = 0;
+
+    /* Check Telegram bot token (--apikey or apikey.txt). */
+    if (apikey == NULL) {
+        FILE *fp = fopen("apikey.txt", "r");
+        if (fp) { fclose(fp); }
+        else {
+            fprintf(stderr,
+                "\n  ERROR: Telegram bot token not provided.\n"
+                "         Use --apikey <TOKEN> or create an apikey.txt file.\n"
+                "         Get a token from @BotFather on Telegram.\n\n");
+            missing = 1;
+        }
+    }
+
+    /* Check Anthropic API key when manager is configured. */
+    if (MgrPath[0] != '\0') {
+        const char *anthropic_key = getenv("ANTHROPIC_API_KEY");
+        if (anthropic_key == NULL || anthropic_key[0] == '\0') {
+            fprintf(stderr,
+                "  ERROR: ANTHROPIC_API_KEY environment variable not set.\n"
+                "         Required when using --mgr.\n"
+                "         Get a key from https://console.anthropic.com/\n\n");
+            missing = 1;
+        }
+    }
+
+    if (missing) {
+        fprintf(stderr,
+            "  Usage: ANTHROPIC_API_KEY=sk-... ./paceon --apikey <TELEGRAM_TOKEN> [options]\n\n"
+            "  Options:\n"
+            "    --apikey <token>    Telegram bot token (from @BotFather)\n"
+            "    --use-weak-security Disable OTP authentication\n"
+            "    --mgr <path>       Path to AI manager script (requires ANTHROPIC_API_KEY)\n"
+            "    --dbfile <path>    SQLite database path (default: ./mybot.sqlite)\n\n");
+        return 1;
     }
 
     /* Ignore SIGPIPE so writes to broken mgr pipe return EPIPE instead. */
