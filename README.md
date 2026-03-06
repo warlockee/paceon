@@ -124,14 +124,19 @@ The manager is an LLM-powered agent (Claude) that can autonomously monitor and c
 ANTHROPIC_API_KEY=sk-... ./paceon --apikey YOUR_BOT_TOKEN --mgr mgr/main.py
 ```
 
+Both `--apikey` and `ANTHROPIC_API_KEY` are validated at startup. If either is missing, paceon shows a clear error and exits instead of silently failing.
+
 Then send `.mgr` in Telegram to enter manager mode. In manager mode, your messages go to the AI agent instead of being sent as keystrokes. Dot commands (`.list`, `.1`, etc.) still work normally.
 
 The manager can:
 - List, read, and send commands to any terminal
 - Execute commands asynchronously and notify you when they finish
 - Queue commands to the same terminal so they don't overlap
+- Auto-detect pending commands at prompts and submit them
+- Follow up on completed commands (results feed back to the LLM)
 - Run repeating background tasks ("watch this terminal until X happens")
 - Remember things across restarts (persistent memory)
+- Auto-restart on crash (up to 5 retries with backoff)
 
 Send `.exit` to leave manager mode, or `.health` for a status report.
 
@@ -155,7 +160,7 @@ Terminal IDs come from the `list` output (e.g. `12399` on macOS, `%0` on tmux).
 | `PACEON_VISIBLE_LINES` | `40` | Number of terminal lines to include in output |
 | `PACEON_SPLIT_MESSAGES` | off | Set to `1` to split long output across multiple messages |
 | `PACEON_CTL` | `./paceon-ctl` | Path to the paceon-ctl binary (used by manager) |
-| `PACEON_MGR_MODEL` | `claude-sonnet-4-20250514` | Claude model for the manager agent |
+| `PACEON_MGR_MODEL` | `claude-opus-4-6` | Claude model for the manager agent |
 | `ANTHROPIC_API_KEY` | (none) | Anthropic API key for the manager agent |
 
 Terminal output is sent as a single message by default. Each new command or refresh **deletes the previous output messages** and sends fresh ones, creating a clean "live terminal" view rather than spamming the chat.
