@@ -126,10 +126,8 @@ void handle_request(sqlite3 *db, BotRequest *br) {
             }
             MgrMode = 1;
             botSendMessage(br->target,
-                "\xf0\x9f\xa4\x96 Manager mode. "
-                "Type normally to talk to me.\n"
-                ".exit to go back. "
-                "Dot commands (.list .1) still work.", 0);
+                "\xf0\x9f\xa4\x96 Manager mode on.\n"
+                "Dot commands still work: .list .1 .exit", 0);
         } else {
             MgrMode = 0;
             botSendMessage(br->target, "Manager mode off.", 0);
@@ -220,6 +218,12 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         if (n < 1 || n > TermCount) {
             botSendMessage(br->target, "Invalid window number.", 0);
             goto done;
+        }
+
+        /* Connecting to a terminal exits manager mode. */
+        if (MgrMode) {
+            MgrMode = 0;
+            botSendMessage(br->target, "Manager mode off. 1-on-1 mode on.", 0);
         }
 
         /* Store connection info directly. */
