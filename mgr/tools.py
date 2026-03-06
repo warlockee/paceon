@@ -30,10 +30,17 @@ def list_terminals() -> list[dict[str, Any]]:
 _CAPTURE_LINES: int = 80  # Roughly one screen worth of output
 
 def capture_terminal(terminal_id: str) -> str:
-    """Capture the last N lines of visible text from a terminal by ID."""
+    """Capture full text from a terminal by ID (used for stability detection)."""
     out, err, rc = ctl_run(["capture", str(terminal_id)])
     if rc != 0:
         return f"[Error capturing terminal {terminal_id}: {err}]"
+    return out
+
+def capture_terminal_tail(terminal_id: str) -> str:
+    """Capture last N lines from a terminal (used for LLM-facing reads)."""
+    out = capture_terminal(terminal_id)
+    if out.startswith("[Error"):
+        return out
     lines = out.split('\n')
     if len(lines) > _CAPTURE_LINES:
         lines = lines[-_CAPTURE_LINES:]
