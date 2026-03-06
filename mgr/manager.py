@@ -27,7 +27,7 @@ from utils import (
     DEFAULT_POLL_INTERVAL, MAX_TASK_ITERATIONS,
     MONITOR_INTERVAL, MEMORY_LIMIT_MB, TASK_PRUNE_AGE,
 )
-from tools import TOOLS, list_terminals, capture_terminal, send_keys
+from tools import TOOLS, list_terminals, capture_terminal, capture_terminal_tail, send_keys
 from memory import _init_memory_db, _load_memories, _save_memory, _delete_memory, MEMORY_DB_PATH
 from stats import STATS, serialize_content
 from terminal_queue import TerminalQueue, QueuedCommand
@@ -239,7 +239,7 @@ IMPORTANT:
 
         elif tool_name == "read_terminal":
             tid: str = tool_input["terminal_id"]
-            return capture_terminal(tid)
+            return capture_terminal_tail(tid)
 
         elif tool_name == "send_command":
             tid = tool_input["terminal_id"]
