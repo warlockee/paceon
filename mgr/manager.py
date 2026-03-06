@@ -11,27 +11,19 @@ import time
 import traceback
 from typing import Any
 
-try:
-    import anthropic
-except ImportError:
-    print(json.dumps({
-        "chat_id": 0,
-        "text": "Error: anthropic package not installed. Run: pip install anthropic"
-    }), flush=True)
-    import sys
-    sys.exit(1)
-
 from utils import (
-    API_KEY, MODEL, send_response, _next_task_id,
+    PROVIDER, MODEL, send_response, _next_task_id, create_client,
     MAX_CONVERSATION_TURNS, MAX_TOOL_ROUNDS, DEFAULT_STABLE_SECONDS,
     DEFAULT_POLL_INTERVAL, MAX_TASK_ITERATIONS,
     MONITOR_INTERVAL, MEMORY_LIMIT_MB, TASK_PRUNE_AGE,
 )
+import llm as llm_mod
 from tools import TOOLS, list_terminals, capture_terminal, capture_terminal_tail, send_keys
 from memory import _init_memory_db, _load_memories, _save_memory, _delete_memory, MEMORY_DB_PATH
-from stats import STATS, serialize_content
+from stats import STATS
 from terminal_queue import TerminalQueue, QueuedCommand
 from background_task import BackgroundTask
+from smart_task import SmartTask
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +33,9 @@ logger = logging.getLogger(__name__)
 
 class Manager:
     def __init__(self) -> None:
-        self.client: anthropic.Anthropic = anthropic.Anthropic(api_key=API_KEY)
+        self.client = create_client()
         self.conversations: dict[int, list[dict[str, Any]]] = {}
-        self.tasks: dict[int, BackgroundTask | QueuedCommand] = {}
+        self.tasks: dict[int, BackgroundTask | SmartTask | QueuedCommand] = {}
         self._conv_locks: dict[int, threading.Lock] = {}
         self._global_lock: threading.Lock = threading.Lock()
         # Initialize memory DB on startup
@@ -147,7 +139,8 @@ BEHAVIOR:
 - When the user asks about terminals, use list_terminals and read_terminal to investigate
 - ALWAYS use send_command for ANY input you send to a terminal. It runs asynchronously — sends the keys, watches in the background, and notifies when the output stops changing. You NEVER need to guess if a command will be fast or slow. Just send it and tell the user "it's running, I'll let you know when it finishes."
 - Commands to the SAME terminal are automatically queued and run one at a time. Each waits for the previous to finish before sending the next. You can safely call send_command multiple times — they won't overlap.
-- For recurring/conditional tasks ("keep asking until", "watch for"), use start_background_task
+- For simple recurring checks ("keep asking until output contains X"), use start_background_task
+- For complex monitoring goals that need judgment ("wait for compilation to finish then run tests", "watch for errors and restart"), use start_smart_task — it uses an LLM to analyze terminal snapshots each iteration and can decide to continue, notify you, send keystrokes, or mark the task complete
 - Keep responses concise — the user is on a phone (Telegram)
 - NEVER use Markdown formatting (no **, *, _, `) — Telegram's legacy parser breaks on special chars in terminal names. Use plain text only.
 - When listing terminals, show the index number and name/title for easy reference
@@ -303,9 +296,28 @@ IMPORTANT:
                     f"(polling every {task.poll_interval}s, "
                     f"max {task.max_iterations} iterations)")
 
+        elif tool_name == "start_smart_task":
+            smart: SmartTask = SmartTask(
+                chat_id=chat_id,
+                terminal_id=tool_input["terminal_id"],
+                prompt=tool_input["prompt"],
+                client=self.client,
+                description=tool_input.get("description", tool_input["prompt"][:80]),
+                send_text=tool_input.get("send_text", ""),
+                poll_interval=tool_input.get("poll_interval", DEFAULT_POLL_INTERVAL),
+                max_iterations=tool_input.get("max_iterations", MAX_TASK_ITERATIONS),
+            )
+            with self._global_lock:
+                self.tasks[smart.task_id] = smart
+            smart.start()
+            STATS.inc("tasks_created")
+            return (f"Smart task #{smart.task_id} started: {smart.description} "
+                    f"(polling every {smart.poll_interval}s, "
+                    f"max {smart.max_iterations} iterations, model: {smart.model})")
+
         elif tool_name == "list_tasks":
             with self._global_lock:
-                tasks_list: list[BackgroundTask | QueuedCommand] = list(self.tasks.values())
+                tasks_list: list[BackgroundTask | SmartTask | QueuedCommand] = list(self.tasks.values())
             if not tasks_list:
                 return "No tasks."
             lines = []
@@ -321,7 +333,7 @@ IMPORTANT:
         elif tool_name == "cancel_task":
             cancel_tid: int = tool_input["task_id"]
             with self._global_lock:
-                cancel_task: BackgroundTask | QueuedCommand | None = self.tasks.get(cancel_tid)
+                cancel_task: BackgroundTask | SmartTask | QueuedCommand | None = self.tasks.get(cancel_tid)
             if cancel_task:
                 cancel_task.cancel()
                 return f"Task #{cancel_tid} cancelled."
@@ -379,25 +391,13 @@ IMPORTANT:
                 STATS.inc("api_calls")
                 logger.info("API call round %d", tool_rounds)
 
-                response = self.client.messages.create(
-                    model=MODEL,
-                    max_tokens=2048,
-                    system=system_prompt,
-                    tools=TOOLS,
-                    messages=conv,
+                serialized, text_parts, tool_uses, stop = llm_mod.chat(
+                    self.client, MODEL, system_prompt, TOOLS, conv,
                 )
 
-                # Serialize content blocks for storage
-                serialized: list[dict[str, Any]] = serialize_content(response.content)
                 conv.append({"role": "assistant", "content": serialized})
 
-                # Check for tool use
-                tool_uses = [b for b in response.content if b.type == "tool_use"]
-
                 if not tool_uses:
-                    # No tools — extract text response
-                    text_parts: list[str] = [b.text for b in response.content
-                                  if b.type == "text"]
                     reply: str = "\n".join(text_parts) if text_parts else "(no response)"
                     logger.info("Sending reply (%d chars)", len(reply))
                     send_response(chat_id, f"\U0001f916 {reply}")
@@ -405,33 +405,24 @@ IMPORTANT:
 
                 # Execute tools and continue
                 logger.info("Executing %d tool(s): %s",
-                            len(tool_uses), [tu.name for tu in tool_uses])
-                tool_results: list[dict[str, Any]] = []
-                for tu in tool_uses:
-                    result: str = self.handle_tool_call(tu.name, tu.input, chat_id)
-                    # Truncate very long tool results
+                            len(tool_uses), [tu[1] for tu in tool_uses])
+                results: list[tuple[str, str, str]] = []
+                for tu_id, tu_name, tu_args in tool_uses:
+                    result: str = self.handle_tool_call(tu_name, tu_args, chat_id)
                     if len(result) > 4000:
                         result = result[:2000] + "\n...[truncated]...\n" + result[-1500:]
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tu.id,
-                        "content": result,
-                    })
+                    results.append((tu_id, tu_name, result))
 
-                conv.append({"role": "user", "content": tool_results})
+                conv.append(llm_mod.format_tool_results(self.client, results))
 
             # Hit max tool rounds
             send_response(chat_id,
                 "\U0001f916 Reached maximum processing steps. "
                 "Please try a simpler request.")
 
-        except anthropic.APIError as e:
-            STATS.inc("errors")
-            logger.error("API error: %s", e)
-            send_response(chat_id,
-                f"\U0001f916 API error: {e.message}")
         except Exception as e:
             STATS.inc("errors")
-            logger.error("Exception: %s", e, exc_info=True)
+            err_msg: str = getattr(e, 'message', str(e))
+            logger.error("LLM error: %s", e, exc_info=True)
             send_response(chat_id,
-                f"\U0001f916 Error: {str(e)}")
+                f"\U0001f916 API error: {err_msg}")

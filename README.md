@@ -118,13 +118,17 @@ Prefix your message with an emoji to add a modifier key:
 
 ## AI Manager Agent
 
-The manager is an LLM-powered agent (Claude) that can autonomously monitor and control your terminals. Start paceon with `--mgr` to enable it:
+The manager is an LLM-powered agent that can autonomously monitor and control your terminals. It supports **Claude** (Anthropic) and **Gemini** (Google) as providers. Start paceon with `--mgr` to enable it:
 
 ```bash
+# Using Claude (default)
 ANTHROPIC_API_KEY=sk-... ./paceon --apikey YOUR_BOT_TOKEN --mgr mgr/main.py
+
+# Using Gemini
+GOOGLE_API_KEY=... ./paceon --apikey YOUR_BOT_TOKEN --mgr mgr/main.py
 ```
 
-Both `--apikey` and `ANTHROPIC_API_KEY` are validated at startup. If either is missing, paceon shows a clear error and exits instead of silently failing.
+The provider is selected automatically based on which API key is set. If both are set, Anthropic is preferred. Both `--apikey` and an LLM API key are validated at startup — paceon shows a clear error and exits if either is missing.
 
 Then send `.mgr` in Telegram to enter manager mode. In manager mode, your messages go to the AI agent instead of being sent as keystrokes. Dot commands (`.list`, `.1`, etc.) still work normally.
 
@@ -160,8 +164,9 @@ Terminal IDs come from the `list` output (e.g. `12399` on macOS, `%0` on tmux).
 | `PACEON_VISIBLE_LINES` | `40` | Number of terminal lines to include in output |
 | `PACEON_SPLIT_MESSAGES` | off | Set to `1` to split long output across multiple messages |
 | `PACEON_CTL` | `./paceon-ctl` | Path to the paceon-ctl binary (used by manager) |
-| `PACEON_MGR_MODEL` | `claude-opus-4-6` | Claude model for the manager agent |
-| `ANTHROPIC_API_KEY` | (none) | Anthropic API key for the manager agent |
+| `PACEON_MGR_MODEL` | `claude-opus-4-6` / `gemini-3-pro` | LLM model for the manager agent (default depends on provider) |
+| `ANTHROPIC_API_KEY` | (none) | Anthropic API key for the manager agent (Claude) |
+| `GOOGLE_API_KEY` | (none) | Google API key for the manager agent (Gemini) |
 
 Terminal output is sent as a single message by default. Each new command or refresh **deletes the previous output messages** and sends fresh ones, creating a clean "live terminal" view rather than spamming the chat.
 

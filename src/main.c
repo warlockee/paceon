@@ -109,25 +109,30 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* Check Anthropic API key when manager is configured. */
+    /* Check LLM API key when manager is configured (Anthropic or Google). */
     if (MgrPath[0] != '\0') {
         const char *anthropic_key = getenv("ANTHROPIC_API_KEY");
-        if (anthropic_key == NULL || anthropic_key[0] == '\0') {
+        const char *google_key = getenv("GOOGLE_API_KEY");
+        int has_anthropic = (anthropic_key != NULL && anthropic_key[0] != '\0');
+        int has_google = (google_key != NULL && google_key[0] != '\0');
+        if (!has_anthropic && !has_google) {
             fprintf(stderr,
-                "  ERROR: ANTHROPIC_API_KEY environment variable not set.\n"
-                "         Required when using --mgr.\n"
-                "         Get a key from https://console.anthropic.com/\n\n");
+                "  ERROR: No LLM API key set. Set one of:\n"
+                "         ANTHROPIC_API_KEY  (for Claude)  — https://console.anthropic.com/\n"
+                "         GOOGLE_API_KEY     (for Gemini)  — https://aistudio.google.com/\n"
+                "         Required when using --mgr.\n\n");
             missing = 1;
         }
     }
 
     if (missing) {
         fprintf(stderr,
-            "  Usage: ANTHROPIC_API_KEY=sk-... ./paceon --apikey <TELEGRAM_TOKEN> [options]\n\n"
+            "  Usage: ANTHROPIC_API_KEY=sk-... ./paceon --apikey <TELEGRAM_TOKEN> [options]\n"
+            "     or: GOOGLE_API_KEY=... ./paceon --apikey <TELEGRAM_TOKEN> [options]\n\n"
             "  Options:\n"
             "    --apikey <token>    Telegram bot token (from @BotFather)\n"
             "    --use-weak-security Disable OTP authentication\n"
-            "    --mgr <path>       Path to AI manager script (requires ANTHROPIC_API_KEY)\n"
+            "    --mgr <path>       Path to AI manager script (requires ANTHROPIC_API_KEY or GOOGLE_API_KEY)\n"
             "    --dbfile <path>    SQLite database path (default: ./mybot.sqlite)\n\n");
         return 1;
     }

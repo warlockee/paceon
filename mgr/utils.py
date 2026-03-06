@@ -17,14 +17,47 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 CTL_PATH: str = os.environ.get("PACEON_CTL", "./paceon-ctl")
-API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL: str = os.environ.get("PACEON_MGR_MODEL", "claude-opus-4-6")
+
+# Provider detection: prefer Anthropic, fall back to Gemini
+_anthropic_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
+_google_key: str = os.environ.get("GOOGLE_API_KEY", "")
+
+if _anthropic_key:
+    PROVIDER: str = "anthropic"
+    API_KEY: str = _anthropic_key
+    MODEL: str = os.environ.get("PACEON_MGR_MODEL", "claude-opus-4-6")
+elif _google_key:
+    PROVIDER = "gemini"
+    API_KEY = _google_key
+    MODEL = os.environ.get("PACEON_MGR_MODEL", "gemini-3-pro")
+else:
+    PROVIDER = ""
+    API_KEY = ""
+    MODEL = ""
+
+
+def create_client() -> object:
+    """Create and return the appropriate LLM client based on PROVIDER."""
+    if PROVIDER == "anthropic":
+        import anthropic
+        return anthropic.Anthropic(api_key=API_KEY)
+    elif PROVIDER == "gemini":
+        from google import genai
+        return genai.Client(api_key=API_KEY)
+    else:
+        raise RuntimeError(
+            "No LLM API key found. Set ANTHROPIC_API_KEY or GOOGLE_API_KEY."
+        )
 
 MAX_CONVERSATION_TURNS: int = 30   # sliding window
 MAX_TOOL_ROUNDS: int = 15          # max tool-use rounds per request
 MAX_TASK_ITERATIONS: int = 100
 MAX_TASK_TIMEOUT: int = 3600       # 1 hour
 DEFAULT_POLL_INTERVAL: int = 10    # seconds
+
+# Smart task (LLM-judged background tasks)
+SMART_TASK_MODEL: str = os.environ.get("PACEON_SMART_TASK_MODEL", MODEL)
+SMART_TASK_HISTORY_LIMIT: int = 10  # max conversation exchanges to keep
 
 # Monitoring
 MONITOR_INTERVAL: int = 3600       # health log every hour

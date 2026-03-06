@@ -151,6 +151,43 @@ TOOLS: list[dict[str, Any]] = [
         }
     },
     {
+        "name": "start_smart_task",
+        "description": (
+            "Start an intelligent background task that uses LLM judgment to monitor a terminal. "
+            "Each iteration captures before/after terminal snapshots, sends them to an LLM which decides: "
+            "continue monitoring, notify the user, send recovery keystrokes, or mark the task complete. "
+            "Use this for complex monitoring goals that can't be expressed as a simple substring check — "
+            "e.g. 'wait for compilation to finish, then run tests', 'watch for errors and restart if needed', "
+            "'monitor training loss and alert if it plateaus'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "terminal_id": {
+                    "type": "string",
+                    "description": "Terminal ID to monitor",
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "Natural language description of what to monitor/achieve (e.g. 'wait for compilation to finish, then run tests')",
+                },
+                "send_text": {
+                    "type": "string",
+                    "description": "Optional text to send to the terminal each iteration before capturing",
+                },
+                "poll_interval": {
+                    "type": "integer",
+                    "description": "Seconds between iterations (default 10, minimum 5)",
+                },
+                "max_iterations": {
+                    "type": "integer",
+                    "description": "Maximum iterations before giving up (default 100)",
+                },
+            },
+            "required": ["terminal_id", "prompt"],
+        },
+    },
+    {
         "name": "list_tasks",
         "description": "List all background tasks and their status.",
         "input_schema": {"type": "object", "properties": {}, "required": []}
