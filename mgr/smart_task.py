@@ -13,7 +13,7 @@ from utils import (
     SMART_TASK_MODEL, SMART_TASK_HISTORY_LIMIT,
 )
 from tools import capture_terminal, send_keys
-from terminal_queue import _wait_stable
+from terminal_queue import _wait_stable, _has_pending_command
 import llm as llm_mod
 
 logger = logging.getLogger(__name__)
@@ -166,8 +166,18 @@ class SmartTask:
                 # Optionally send text
                 if self.send_text:
                     send_keys(self.terminal_id, self.send_text)
-                    _wait_stable(self.terminal_id, stable_seconds=5,
-                                 cancel_event=self._cancel_event)
+                    post_send: str = _wait_stable(
+                        self.terminal_id, stable_seconds=5,
+                        cancel_event=self._cancel_event,
+                        baseline=before)
+                    # Auto-enter: if command was typed but Enter wasn't processed
+                    if _has_pending_command(before, post_send):
+                        logger.info("SmartTask #%d: pending command, sending Enter",
+                                    self.task_id)
+                        send_keys(self.terminal_id, "\n")
+                        _wait_stable(self.terminal_id, stable_seconds=5,
+                                     cancel_event=self._cancel_event,
+                                     baseline=post_send)
                     if self._cancel_event.is_set():
                         return
 
@@ -245,8 +255,10 @@ class SmartTask:
 
                     # If we sent keys, wait for stability before next iteration
                     if action_taken:
+                        pre_action: str = capture_terminal(self.terminal_id)
                         _wait_stable(self.terminal_id, stable_seconds=5,
-                                     cancel_event=self._cancel_event)
+                                     cancel_event=self._cancel_event,
+                                     baseline=pre_action)
                 else:
                     # No tool use — treat as continue
                     logger.debug("SmartTask #%d: no tool use, continuing", self.task_id)

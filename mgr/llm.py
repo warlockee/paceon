@@ -145,20 +145,33 @@ def _chat_gemini(
 
     if response.candidates and response.candidates[0].content:
         for part in response.candidates[0].content.parts:
+            # Capture thought signature if present (required for Gemini 3.x)
+            thought_sig = getattr(part, 'thought_signature', None) or getattr(part, 'thoughtSignature', None)
+            is_thought = getattr(part, 'thought', None)
+
             if part.text is not None:
-                serialized.append({"type": "text", "text": part.text})
-                text_parts.append(part.text)
+                entry: dict[str, Any] = {"type": "text", "text": part.text}
+                if thought_sig:
+                    entry["thought_signature"] = thought_sig
+                if is_thought:
+                    entry["thought"] = True
+                serialized.append(entry)
+                if not is_thought:
+                    text_parts.append(part.text)
             elif part.function_call is not None:
                 fc = part.function_call
                 # Gemini doesn't have tool_use IDs; generate one
                 tool_id = f"gemini_{fc.name}_{id(fc)}"
                 args = dict(fc.args) if fc.args else {}
-                serialized.append({
+                entry = {
                     "type": "tool_use",
                     "id": tool_id,
                     "name": fc.name,
                     "input": args,
-                })
+                }
+                if thought_sig:
+                    entry["thought_signature"] = thought_sig
+                serialized.append(entry)
                 tool_uses.append((tool_id, fc.name, args))
 
     stop = "tool_use" if tool_uses else "end_turn"
@@ -205,13 +218,21 @@ def _to_gemini_contents(messages: list[dict[str, Any]]) -> list[Any]:
                     continue
                 btype = block.get("type", "")
                 if btype == "text":
-                    parts.append(types.Part.from_text(text=block["text"]))
+                    part = types.Part(text=block["text"])
+                    if block.get("thought"):
+                        part.thought = True
+                    if block.get("thought_signature"):
+                        part.thought_signature = block["thought_signature"]
+                    parts.append(part)
                 elif btype == "tool_use":
                     # Assistant requested a tool call — represent as function_call
-                    parts.append(types.Part.from_function_call(
+                    part = types.Part.from_function_call(
                         name=block["name"],
                         args=block.get("input", {}),
-                    ))
+                    )
+                    if block.get("thought_signature"):
+                        part.thought_signature = block["thought_signature"]
+                    parts.append(part)
                 elif btype == "tool_result":
                     # User sending tool results back
                     result_text = block.get("content", "")

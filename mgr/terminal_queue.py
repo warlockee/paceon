@@ -19,15 +19,21 @@ logger = logging.getLogger(__name__)
 
 def _wait_stable(terminal_id: str, stable_seconds: float = DEFAULT_STABLE_SECONDS,
                  cancel_event: threading.Event | None = None,
-                 max_wait: float = MAX_STABILITY_WAIT) -> str:
+                 max_wait: float = MAX_STABILITY_WAIT,
+                 baseline: str | None = None) -> str:
     """
     Wait until terminal output stops changing. Returns the final output.
     Captures output repeatedly; when two consecutive captures are identical
     and stable_seconds have passed since the last change, returns.
+
+    If baseline is provided, output must first differ from it before
+    stability timing begins. This prevents premature "stable" detection
+    on laggy/remote terminals where the command hasn't arrived yet.
     """
     start: float = time.time()
     prev_output: str | None = None
     last_change: float = time.time()
+    saw_change: bool = baseline is None  # if no baseline, any state counts
 
     while True:
         if cancel_event and cancel_event.is_set():
@@ -37,7 +43,14 @@ def _wait_stable(terminal_id: str, stable_seconds: float = DEFAULT_STABLE_SECOND
 
         output: str = capture_terminal(terminal_id)
 
-        if output != prev_output:
+        # If we have a baseline, wait until output actually differs from it
+        if not saw_change:
+            if output != baseline:
+                saw_change = True
+                last_change = time.time()
+                prev_output = output
+            # Still matches baseline — keep waiting, don't start stability timer
+        elif output != prev_output:
             last_change = time.time()
             prev_output = output
         elif time.time() - last_change >= stable_seconds:
@@ -177,17 +190,14 @@ class TerminalQueue:
                 self._update_task(tasks_dict, global_lock, task_id, "error")
                 return
 
-            # Wait for terminal to react
-            self._cancel_event.wait(2)
-            if self._cancel_event.is_set():
-                return
-
-            # Wait for output to stabilize
+            # Wait for output to stabilize (baseline ensures we wait for
+            # the terminal to actually react before starting stability timer)
             output: str = _wait_stable(
                 self.terminal_id,
                 stable_seconds=stable_seconds,
                 cancel_event=self._cancel_event,
                 max_wait=MAX_STABILITY_WAIT,
+                baseline=baseline,
             )
 
             if self._cancel_event.is_set():
@@ -198,14 +208,15 @@ class TerminalQueue:
             if _has_pending_command(baseline, output):
                 logger.info("Auto-enter: pending command detected on %s, sending newline",
                             self.terminal_id)
+                pre_enter: str = output
                 send_keys(self.terminal_id, "\n")
-                self._cancel_event.wait(2)
                 if not self._cancel_event.is_set():
                     output = _wait_stable(
                         self.terminal_id,
                         stable_seconds=stable_seconds,
                         cancel_event=self._cancel_event,
                         max_wait=MAX_STABILITY_WAIT,
+                        baseline=pre_enter,
                     )
                 if self._cancel_event.is_set():
                     return

@@ -9,7 +9,7 @@ import time
 
 from utils import send_response, _next_task_id, MAX_TASK_ITERATIONS, MAX_TASK_TIMEOUT
 from tools import capture_terminal, send_keys
-from terminal_queue import _wait_stable
+from terminal_queue import _wait_stable, _has_pending_command
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +64,21 @@ class BackgroundTask:
 
                 # Send keys if specified
                 if self.send_text:
+                    pre_send: str = capture_terminal(self.terminal_id)
                     send_keys(self.terminal_id, self.send_text)
                     # Wait for output to stabilize after sending
-                    _wait_stable(self.terminal_id, stable_seconds=5,
-                                 cancel_event=self._cancel_event)
+                    post_send: str = _wait_stable(
+                        self.terminal_id, stable_seconds=5,
+                        cancel_event=self._cancel_event,
+                        baseline=pre_send)
+                    # Auto-enter: if command was typed but Enter wasn't processed
+                    if _has_pending_command(pre_send, post_send):
+                        logger.info("Task #%d: pending command detected, sending Enter",
+                                    self.task_id)
+                        send_keys(self.terminal_id, "\n")
+                        _wait_stable(self.terminal_id, stable_seconds=5,
+                                     cancel_event=self._cancel_event,
+                                     baseline=post_send)
 
                 # Capture and check for the target text
                 output: str = capture_terminal(self.terminal_id)

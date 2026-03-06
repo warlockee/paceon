@@ -29,7 +29,7 @@ if _anthropic_key:
 elif _google_key:
     PROVIDER = "gemini"
     API_KEY = _google_key
-    MODEL = os.environ.get("PACEON_MGR_MODEL", "gemini-3-flash")
+    MODEL = os.environ.get("PACEON_MGR_MODEL", "gemini-3-flash-preview")
 else:
     PROVIDER = ""
     API_KEY = ""
