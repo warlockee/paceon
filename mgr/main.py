@@ -32,7 +32,7 @@ def main() -> None:
     )
 
     if not API_KEY:
-        logger.error("ANTHROPIC_API_KEY not set. Manager will not start.")
+        logger.error("No LLM API key set. Manager will not start.")
         sys.exit(1)
 
     mgr: Manager = Manager()

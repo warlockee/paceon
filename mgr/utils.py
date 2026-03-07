@@ -18,18 +18,18 @@ logger = logging.getLogger(__name__)
 
 CTL_PATH: str = os.environ.get("PACEON_CTL", "./paceon-ctl")
 
-# Provider detection: prefer Anthropic, fall back to Gemini
+# Provider detection: prefer Gemini, fall back to Anthropic
 _anthropic_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
 _google_key: str = os.environ.get("GOOGLE_API_KEY", "")
 
-if _anthropic_key:
-    PROVIDER: str = "anthropic"
-    API_KEY: str = _anthropic_key
-    MODEL: str = os.environ.get("PACEON_MGR_MODEL", "claude-opus-4-6")
-elif _google_key:
-    PROVIDER = "gemini"
-    API_KEY = _google_key
-    MODEL = os.environ.get("PACEON_MGR_MODEL", "gemini-3-flash-preview")
+if _google_key:
+    PROVIDER: str = "gemini"
+    API_KEY: str = _google_key
+    MODEL: str = os.environ.get("PACEON_MGR_MODEL", "gemini-3-flash-preview")
+elif _anthropic_key:
+    PROVIDER = "anthropic"
+    API_KEY = _anthropic_key
+    MODEL = os.environ.get("PACEON_MGR_MODEL", "claude-opus-4-6")
 else:
     PROVIDER = ""
     API_KEY = ""
