@@ -134,6 +134,13 @@ int totp_setup(const char *db_path) {
     /* Ensure KV table exists. */
     sqlite3_exec(db, TB_CREATE_KV_STORE, 0, 0, NULL);
 
+    /* OTP is off by default.  Only activate when --enable-otp is passed. */
+    if (!EnableOtp) {
+        WeakSecurity = 1;
+        sqlite3_close(db);
+        return 0;
+    }
+
     /* Check for existing secret. */
     sds existing = kvGet(db, "totp_secret");
     if (existing) {

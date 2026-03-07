@@ -26,6 +26,7 @@ extern volatile sig_atomic_t ShutdownRequested;
 
 /* Security / authentication state. */
 extern int WeakSecurity;
+extern int EnableOtp;
 extern int Authenticated;
 extern time_t LastActivity;
 extern int OtpTimeout;

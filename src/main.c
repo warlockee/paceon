@@ -37,6 +37,7 @@ pthread_mutex_t RequestLock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t MgrLock = PTHREAD_MUTEX_INITIALIZER;
 volatile sig_atomic_t ShutdownRequested = 0;
 int WeakSecurity = 0;             /* If 1, skip all OTP logic. */
+int EnableOtp = 0;                /* If 1, generate TOTP secret on first run. */
 int Authenticated = 0;            /* Whether OTP has been verified. */
 time_t LastActivity = 0;          /* Last time owner sent a valid command. */
 int OtpTimeout = 300;             /* Timeout in seconds (default 5 min). */
@@ -80,6 +81,8 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--use-weak-security") == 0) {
             WeakSecurity = 1;
             printf("WARNING: OTP authentication disabled.\n");
+        } else if (strcmp(argv[i], "--enable-otp") == 0) {
+            EnableOtp = 1;
         } else if (strcmp(argv[i], "--dbfile") == 0 && i+1 < argc) {
             dbfile = argv[++i];
         } else if (strcmp(argv[i], "--apikey") == 0 && i+1 < argc) {
@@ -88,6 +91,17 @@ int main(int argc, char **argv) {
             strncpy(MgrPath, argv[++i], sizeof(MgrPath) - 1);
             MgrPath[sizeof(MgrPath) - 1] = '\0';
             printf("MGR: Manager script: %s\n", MgrPath);
+        }
+    }
+
+    /* Auto-detect manager script if not explicitly provided. */
+    if (MgrPath[0] == '\0') {
+        /* Try mgr/manager.py relative to the working directory. */
+        FILE *mf = fopen("mgr/main.py", "r");
+        if (mf) {
+            fclose(mf);
+            strncpy(MgrPath, "mgr/main.py", sizeof(MgrPath) - 1);
+            printf("MGR: Auto-detected manager script: %s\n", MgrPath);
         }
     }
 
@@ -119,8 +133,7 @@ int main(int argc, char **argv) {
             fprintf(stderr,
                 "  ERROR: No LLM API key set. Set one of:\n"
                 "         ANTHROPIC_API_KEY  (for Claude)  — https://console.anthropic.com/\n"
-                "         GOOGLE_API_KEY     (for Gemini)  — https://aistudio.google.com/\n"
-                "         Required when using --mgr.\n\n");
+                "         GOOGLE_API_KEY     (for Gemini)  — https://aistudio.google.com/\n\n");
             missing = 1;
         }
     }
@@ -131,7 +144,8 @@ int main(int argc, char **argv) {
             "     or: GOOGLE_API_KEY=... ./paceon --apikey <TELEGRAM_TOKEN> [options]\n\n"
             "  Options:\n"
             "    --apikey <token>    Telegram bot token (from @BotFather)\n"
-            "    --use-weak-security Disable OTP authentication\n"
+            "    --enable-otp        Enable OTP authentication (generates TOTP secret on first run)\n"
+            "    --use-weak-security Disable OTP authentication (even if previously configured)\n"
             "    --mgr <path>       Path to AI manager script (requires ANTHROPIC_API_KEY or GOOGLE_API_KEY)\n"
             "    --dbfile <path>    SQLite database path (default: ./mybot.sqlite)\n\n");
         return 1;
