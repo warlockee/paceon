@@ -152,7 +152,7 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         if (*p == '\0') goto done;
 
         if (mgr_send(br->target, req) == 0) {
-            botSendMessage(br->target, "\xf0\x9f\xa4\x96 ...", 0);
+            botSendMessageAsync(br->target, "\xf0\x9f\xa4\x96 ...", 0);
         } else {
             botSendMessage(br->target,
                 "Manager not available. Try .mgr to reconnect.", 0);

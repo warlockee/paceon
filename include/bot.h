@@ -58,6 +58,7 @@ sds makeGETBotRequest(const char *action, int *resptr, char **optlist, int numop
 int botSendMessageAndGetInfo(int64_t target, sds text, int64_t reply_to,
                              int64_t *chat_id, int64_t *message_id);
 int botSendMessage(int64_t target, sds text, int64_t reply_to);
+void botSendMessageAsync(int64_t target, const char *text, int64_t reply_to);
 int botEditMessageText(int64_t chat_id, int message_id, sds text);
 int botSendMessageWithKeyboard(int64_t target, sds text, const char *parse_mode,
                                const char *btn_text, const char *btn_data,

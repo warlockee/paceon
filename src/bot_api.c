@@ -45,6 +45,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #include <curl/curl.h>
 
@@ -149,6 +150,40 @@ int botSendMessageAndGetInfo(int64_t target, sds text, int64_t reply_to, int64_t
  * Return 1 on success, 0 on error. */
 int botSendMessage(int64_t target, sds text, int64_t reply_to) {
     return botSendMessageAndGetInfo(target,text,reply_to,NULL,NULL);
+}
+
+/* Fire-and-forget message send in a detached thread. */
+struct async_msg {
+    int64_t target;
+    int64_t reply_to;
+    char text[];
+};
+
+static void *async_send_thread(void *arg) {
+    struct async_msg *m = arg;
+    sds s = sdsnew(m->text);
+    botSendMessage(m->target, s, m->reply_to);
+    sdsfree(s);
+    free(m);
+    return NULL;
+}
+
+void botSendMessageAsync(int64_t target, const char *text, int64_t reply_to) {
+    size_t len = strlen(text) + 1;
+    struct async_msg *m = malloc(sizeof(*m) + len);
+    m->target = target;
+    m->reply_to = reply_to;
+    memcpy(m->text, text, len);
+    pthread_t t;
+    if (pthread_create(&t, NULL, async_send_thread, m) == 0) {
+        pthread_detach(t);
+    } else {
+        /* Fallback: send synchronously. */
+        sds s = sdsnew(text);
+        botSendMessage(target, s, reply_to);
+        sdsfree(s);
+        free(m);
+    }
 }
 
 /* Send a text message with an inline keyboard button. Returns message_id
