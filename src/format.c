@@ -93,8 +93,7 @@ sds build_help_message(void) {
         "`\xe2\x9d\xa4\xef\xb8\x8f` Ctrl  `\xf0\x9f\x92\x99` Alt  "
         "`\xf0\x9f\x92\x9a` Cmd  `\xf0\x9f\x92\x9b` ESC  "
         "`\xf0\x9f\xa7\xa1` Enter\n\n"
-        "Escape sequences: \\n=Enter \\t=Tab\n\n"
-        "`.otptimeout <seconds>` - Set OTP timeout (30-28800)"
+        "Escape sequences: \\n=Enter \\t=Tab"
     );
 }
 

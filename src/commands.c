@@ -67,6 +67,12 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         kvSet(db, OWNER_KEY, buf, 0);
         owner_id = br->from;
         printf("Registered owner: %lld (%s)\n", (long long)owner_id, br->from_username);
+        botSendMessage(br->target,
+            "Welcome to paceon! You are now the owner.\n\n"
+            "`.list` — show terminals\n"
+            "`.mgr` — AI manager mode\n"
+            "`.help` — all commands", 0);
+        goto done;
     }
 
     if (br->from != owner_id) {
@@ -116,7 +122,7 @@ void handle_request(sqlite3 *db, BotRequest *br) {
         if (!MgrMode) {
             if (MgrPath[0] == '\0') {
                 botSendMessage(br->target,
-                    "Manager not configured. Start with --mgr <path>.", 0);
+                    "Manager not configured. No LLM API key set.", 0);
                 goto done;
             }
             if (mgr_start() != 0) {
@@ -174,7 +180,7 @@ void handle_request(sqlite3 *db, BotRequest *br) {
     if (strcasecmp(req, ".health") == 0) {
         if (MgrPath[0] == '\0') {
             botSendMessage(br->target,
-                "Manager not configured. Start with --mgr <path>.", 0);
+                "Manager not configured. No LLM API key set.", 0);
             goto done;
         }
         if (mgr_start() != 0) {
