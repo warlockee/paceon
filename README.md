@@ -37,6 +37,10 @@ In both cases, terminal output is sent as monospace text to Telegram with a refr
 
 ### Prerequisites
 
+- **macOS:** Xcode Command Line Tools (`xcode-select --install`), `curl`, `sqlite3`
+- **Linux:** `gcc`, `make`, `tmux`, `libcurl-dev`, `libsqlite3-dev`
+- **AI Manager:** Python 3 with `pip install -r mgr/requirements.txt` (or let `setup.sh` handle it)
+
 ### Create a Telegram Bot
 
 Each machine needs its own bot. To create one:
@@ -49,14 +53,12 @@ Each machine needs its own bot. To create one:
 ### Run
 
 ```bash
-# The setup script saves the token to apikey.txt and creates run.sh
-./run.sh
+# Install Python deps for AI manager (skip if you only want terminal control)
+pip install -r mgr/requirements.txt
 
-# Or run directly
-./paceon
-
-# Or pass the token directly
-./paceon --apikey YOUR_BOT_TOKEN
+# Build and run
+make
+GOOGLE_API_KEY=... ./paceon --apikey YOUR_BOT_TOKEN
 ```
 
 ### Options
