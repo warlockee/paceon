@@ -50,8 +50,11 @@ def _load_memories(chat_id: int) -> list[tuple[int, str, str]]:
         finally:
             conn.close()
 
+MAX_MEMORIES_PER_CHAT: int = 100
+
 def _save_memory(chat_id: int, content: str, category: str = "general") -> int | None:
-    """Save a new memory. Returns the memory ID."""
+    """Save a new memory. Returns the memory ID. Enforces a per-chat cap
+    by deleting the oldest memories when the limit is exceeded."""
     now = time.time()
     with _memory_db_lock:
         conn = _init_memory_db()
@@ -60,6 +63,12 @@ def _save_memory(chat_id: int, content: str, category: str = "general") -> int |
                 "INSERT INTO memories (chat_id, content, category, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (chat_id, content, category, now, now)
+            )
+            # Enforce per-chat cap: delete oldest beyond limit
+            conn.execute(
+                "DELETE FROM memories WHERE chat_id = ? AND id NOT IN "
+                "(SELECT id FROM memories WHERE chat_id = ? ORDER BY id DESC LIMIT ?)",
+                (chat_id, chat_id, MAX_MEMORIES_PER_CHAT)
             )
             conn.commit()
             return cur.lastrowid
