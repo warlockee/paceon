@@ -26,20 +26,15 @@ def _tail(text: str, n: int = 20) -> str:
     return '\n'.join(lines[-n:]) if len(lines) > n else text.strip()
 
 def _is_meaningful_change(old: str, new: str) -> bool:
-    """Return True if the change is more than just a status bar / clock update.
-    Ignores changes that only affect the last line (typically a status bar)
-    or that change fewer than 2 lines out of the tail window."""
+    """Return True if the change represents real terminal activity.
+    Ignores changes where only 1 line differs (status bars, clocks,
+    spinners, prompt redraws — regardless of position)."""
     old_lines = old.split('\n')
     new_lines = new.split('\n')
     if len(old_lines) != len(new_lines):
         return True
-    changed = [i for i in range(len(old_lines)) if old_lines[i] != new_lines[i]]
-    if not changed:
-        return False
-    # Only the last line changed — likely a clock/status bar
-    if changed == [len(old_lines) - 1]:
-        return False
-    return True
+    changed = sum(1 for a, b in zip(old_lines, new_lines) if a != b)
+    return changed >= 2
 
 def _track(terminal_id: str, content: str) -> None:
     tail = _tail(content)
