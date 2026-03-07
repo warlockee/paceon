@@ -64,10 +64,11 @@ Each machine needs its own bot. To create one:
 | Flag | Description |
 |------|-------------|
 | `--apikey <token>` | Telegram bot API token |
-| `--use-weak-security` | Disable Authenticator (owner-only lock still applies) |
+| `--enable-otp` | Enable TOTP authentication (off by default) |
+| `--use-weak-security` | Disable TOTP even if previously configured |
 | `--dbfile <path>` | Custom database path (default: `./mybot.sqlite`) |
 | `--dangerously-attach-to-any-window` | Show all windows, not just terminals (macOS only) |
-| `--mgr <path>` | Path to the manager agent script (e.g. `mgr/main.py`) |
+| `--mgr <path>` | Path to the manager agent script (auto-detected if `mgr/main.py` exists) |
 
 ## Usage
 
@@ -78,7 +79,7 @@ Message your bot on Telegram:
 | `.list` | List available terminal sessions |
 | `.1` `.2` ... | Connect to a session by number |
 | `.help` | Show help |
-| `.mgr` | Toggle AI manager mode (requires `--mgr`) |
+| `.mgr` | Toggle AI manager mode (auto-enabled when `mgr/main.py` exists) |
 | `.exit` | Leave manager mode |
 | `.health` | Manager health report (uptime, memory, stats) |
 | `.otptimeout <seconds>` | Set TOTP session timeout |
@@ -118,17 +119,17 @@ Prefix your message with an emoji to add a modifier key:
 
 ## AI Manager Agent
 
-The manager is an LLM-powered agent that can autonomously monitor and control your terminals. It supports **Claude** (Anthropic) and **Gemini** (Google) as providers. Start paceon with `--mgr` to enable it:
+The manager is an LLM-powered agent that can autonomously monitor and control your terminals. It supports **Claude** (Anthropic) and **Gemini** (Google) as providers. The manager is auto-detected when `mgr/main.py` exists in the working directory — no `--mgr` flag needed:
 
 ```bash
-# Using Claude (default)
-ANTHROPIC_API_KEY=sk-... ./paceon --apikey YOUR_BOT_TOKEN --mgr mgr/main.py
+# Using Gemini (default when both keys are set)
+GOOGLE_API_KEY=... ./paceon --apikey YOUR_BOT_TOKEN
 
-# Using Gemini
-GOOGLE_API_KEY=... ./paceon --apikey YOUR_BOT_TOKEN --mgr mgr/main.py
+# Using Claude
+ANTHROPIC_API_KEY=sk-... ./paceon --apikey YOUR_BOT_TOKEN
 ```
 
-The provider is selected automatically based on which API key is set. If both are set, Anthropic is preferred. Both `--apikey` and an LLM API key are validated at startup — paceon shows a clear error and exits if either is missing.
+The provider is selected automatically based on which API key is set. If both are set, Gemini is preferred. Override the model with `PACEON_MGR_MODEL`. Both `--apikey` and an LLM API key are validated at startup — paceon shows a clear error and exits if either is missing.
 
 Then send `.mgr` in Telegram to enter manager mode. In manager mode, your messages go to the AI agent instead of being sent as keystrokes. Dot commands (`.list`, `.1`, etc.) still work normally.
 
@@ -164,7 +165,7 @@ Terminal IDs come from the `list` output (e.g. `12399` on macOS, `%0` on tmux).
 | `PACEON_VISIBLE_LINES` | `40` | Number of terminal lines to include in output |
 | `PACEON_SPLIT_MESSAGES` | off | Set to `1` to split long output across multiple messages |
 | `PACEON_CTL` | `./paceon-ctl` | Path to the paceon-ctl binary (used by manager) |
-| `PACEON_MGR_MODEL` | `claude-opus-4-6` / `gemini-3-pro` | LLM model for the manager agent (default depends on provider) |
+| `PACEON_MGR_MODEL` | `gemini-3-flash-preview` / `claude-opus-4-6` | LLM model for the manager agent (default depends on provider) |
 | `ANTHROPIC_API_KEY` | (none) | Anthropic API key for the manager agent (Claude) |
 | `GOOGLE_API_KEY` | (none) | Google API key for the manager agent (Gemini) |
 
@@ -179,7 +180,7 @@ PACEON_SPLIT_MESSAGES=1 ./paceon
 ## Security
 
 - **Owner lock**: The first Telegram user to message the bot becomes the owner. All other users are ignored.
-- **TOTP**: By default, paceon requires Google Authenticator verification. A QR code is shown on first launch. Use `--use-weak-security` to disable.
+- **TOTP**: OTP is **off by default** for a frictionless first-time experience. Use `--enable-otp` to set up Google Authenticator — a QR code is shown on first launch. Use `--use-weak-security` to disable OTP even if previously configured.
 - **One bot = one machine**: Don't share a bot token across machines. Each machine should have its own bot.
 - **Reset**: Delete `mybot.sqlite` to reset ownership and TOTP.
 
