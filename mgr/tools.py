@@ -25,13 +25,34 @@ def _tail(text: str, n: int = 20) -> str:
     lines = text.strip().split('\n')
     return '\n'.join(lines[-n:]) if len(lines) > n else text.strip()
 
+def _is_meaningful_change(old: str, new: str) -> bool:
+    """Return True if the change is more than just a status bar / clock update.
+    Ignores changes that only affect the last line (typically a status bar)
+    or that change fewer than 2 lines out of the tail window."""
+    old_lines = old.split('\n')
+    new_lines = new.split('\n')
+    if len(old_lines) != len(new_lines):
+        return True
+    changed = [i for i in range(len(old_lines)) if old_lines[i] != new_lines[i]]
+    if not changed:
+        return False
+    # Only the last line changed — likely a clock/status bar
+    if changed == [len(old_lines) - 1]:
+        return False
+    return True
+
 def _track(terminal_id: str, content: str) -> None:
     tail = _tail(content)
     now = time.time()
     with _activity_lock:
         prev = _activity.get(terminal_id)
-        if prev is None or prev[0] != tail:
+        if prev is None:
             _activity[terminal_id] = (tail, now)
+        elif _is_meaningful_change(prev[0], tail):
+            _activity[terminal_id] = (tail, now)
+        else:
+            # Update stored content but keep old timestamp
+            _activity[terminal_id] = (tail, prev[1])
 
 def _format_ago(terminal_id: str) -> str:
     with _activity_lock:
