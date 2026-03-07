@@ -95,8 +95,8 @@ int main(int argc, char **argv) {
     }
 
     /* Auto-detect manager script if not explicitly provided. */
-    if (MgrPath[0] == '\0') {
-        /* Try mgr/manager.py relative to the working directory. */
+    int mgr_explicit = (MgrPath[0] != '\0');
+    if (!mgr_explicit) {
         FILE *mf = fopen("mgr/main.py", "r");
         if (mf) {
             fclose(mf);
@@ -130,11 +130,18 @@ int main(int argc, char **argv) {
         int has_anthropic = (anthropic_key != NULL && anthropic_key[0] != '\0');
         int has_google = (google_key != NULL && google_key[0] != '\0');
         if (!has_anthropic && !has_google) {
-            fprintf(stderr,
-                "  ERROR: No LLM API key set. Set one of:\n"
-                "         ANTHROPIC_API_KEY  (for Claude)  — https://console.anthropic.com/\n"
-                "         GOOGLE_API_KEY     (for Gemini)  — https://aistudio.google.com/\n\n");
-            missing = 1;
+            if (mgr_explicit) {
+                /* User explicitly requested --mgr: hard error. */
+                fprintf(stderr,
+                    "  ERROR: No LLM API key set. Set one of:\n"
+                    "         ANTHROPIC_API_KEY  (for Claude)  — https://console.anthropic.com/\n"
+                    "         GOOGLE_API_KEY     (for Gemini)  — https://aistudio.google.com/\n\n");
+                missing = 1;
+            } else {
+                /* Auto-detected: just disable manager and continue. */
+                printf("MGR: No LLM API key set. Manager disabled.\n");
+                MgrPath[0] = '\0';
+            }
         }
     }
 
