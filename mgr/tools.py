@@ -28,12 +28,14 @@ def _tail(text: str, n: int = 20) -> str:
 def _is_meaningful_change(old: str, new: str) -> bool:
     """Return True if the change represents real terminal activity.
     Ignores changes where only 1 line differs (status bars, clocks,
-    spinners, prompt redraws — regardless of position)."""
+    spinners, prompt redraws — regardless of position).
+    Compares using the shorter length to handle line count fluctuation."""
     old_lines = old.split('\n')
     new_lines = new.split('\n')
-    if len(old_lines) != len(new_lines):
-        return True
-    changed = sum(1 for a, b in zip(old_lines, new_lines) if a != b)
+    # Compare overlapping lines; extra lines at the end count as changes
+    min_len = min(len(old_lines), len(new_lines))
+    changed = sum(1 for i in range(min_len) if old_lines[i] != new_lines[i])
+    changed += abs(len(old_lines) - len(new_lines))
     return changed >= 2
 
 def _track(terminal_id: str, content: str) -> None:
@@ -42,17 +44,18 @@ def _track(terminal_id: str, content: str) -> None:
     with _activity_lock:
         prev = _activity.get(terminal_id)
         if prev is None:
-            _activity[terminal_id] = (tail, now)
+            # First capture: baseline only, no timestamp (shows as "")
+            _activity[terminal_id] = (tail, 0)
         elif _is_meaningful_change(prev[0], tail):
             _activity[terminal_id] = (tail, now)
         else:
-            # Update stored content but keep old timestamp
+            # Noise — update content, keep old timestamp
             _activity[terminal_id] = (tail, prev[1])
 
 def _format_ago(terminal_id: str) -> str:
     with _activity_lock:
         entry = _activity.get(terminal_id)
-    if entry is None:
+    if entry is None or entry[1] == 0:
         return ""
     delta = int(time.time() - entry[1])
     if delta < 60:
