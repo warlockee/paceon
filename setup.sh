@@ -156,65 +156,58 @@ if [ ! -f apikey.txt ]; then
     fi
 fi
 
-# Step 3b: AI Manager setup (optional)
+# Step 3b: AI Manager setup
 echo ""
-echo -e "${BOLD}AI Manager (optional)${NC}"
+echo -e "${BOLD}AI Manager${NC}"
 echo ""
-echo "  Paceon can run an AI manager agent that monitors all terminals,"
-echo "  answers questions about their state, and executes tasks autonomously."
-echo "  Requires an Anthropic API key (Claude)."
+echo "  Paceon includes an AI manager that monitors your terminals,"
+echo "  answers questions, and executes tasks autonomously."
+echo "  Requires a Google (Gemini) or Anthropic (Claude) API key."
 echo ""
-echo "  1) Enable AI manager"
-echo "  2) Skip for now"
+echo "  1) Google Gemini  (recommended — fast and free tier available)"
+echo "  2) Anthropic Claude"
+echo "  3) Skip for now"
 echo ""
-read -p "  Choose [1/2]: " -n 1 -r MGR_CHOICE
+read -p "  Choose [1/2/3]: " -n 1 -r MGR_CHOICE
 echo ""
 
-MGR_FLAGS=""
+LLM_KEY=""
+LLM_VAR=""
 if [[ "$MGR_CHOICE" == "1" ]]; then
-    read -p "  Anthropic API key: " ANTHROPIC_KEY
-    ANTHROPIC_KEY=$(echo "$ANTHROPIC_KEY" | tr -d '[:space:]')
-    if [ -z "$ANTHROPIC_KEY" ]; then
-        warn "No API key provided. Skipping AI manager."
-    else
-        info "Setting up Python environment for AI manager..."
-        if command -v python3 &>/dev/null; then
-            python3 -m venv mgr/.venv 2>/dev/null || true
-            if [ -f mgr/.venv/bin/pip ]; then
-                mgr/.venv/bin/pip install -q -r mgr/requirements.txt
-                ok "AI manager dependencies installed."
-                MGR_FLAGS="--mgr $(pwd)/mgr/main.py"
-                # Save the API key for the run script
-                export ANTHROPIC_API_KEY="$ANTHROPIC_KEY"
-            else
-                warn "Failed to create Python venv. AI manager unavailable."
-            fi
+    read -p "  Google API key: " LLM_KEY
+    LLM_KEY=$(echo "$LLM_KEY" | tr -d '[:space:]')
+    LLM_VAR="GOOGLE_API_KEY"
+elif [[ "$MGR_CHOICE" == "2" ]]; then
+    read -p "  Anthropic API key: " LLM_KEY
+    LLM_KEY=$(echo "$LLM_KEY" | tr -d '[:space:]')
+    LLM_VAR="ANTHROPIC_API_KEY"
+fi
+
+if [[ -n "$LLM_VAR" && -z "$LLM_KEY" ]]; then
+    warn "No API key provided. Skipping AI manager."
+    LLM_VAR=""
+fi
+
+if [[ -n "$LLM_VAR" ]]; then
+    info "Setting up Python environment for AI manager..."
+    if command -v python3 &>/dev/null; then
+        python3 -m venv mgr/.venv 2>/dev/null || true
+        if [ -f mgr/.venv/bin/pip ]; then
+            mgr/.venv/bin/pip install -q -r mgr/requirements.txt
+            ok "AI manager dependencies installed."
         else
-            warn "python3 not found. AI manager requires Python 3."
+            warn "Failed to create Python venv. AI manager unavailable."
+            LLM_VAR=""
         fi
+    else
+        warn "python3 not found. AI manager requires Python 3."
+        LLM_VAR=""
     fi
 fi
 
-# Step 4: Security mode
-echo ""
-echo -e "${BOLD}Security Mode${NC}"
-echo ""
-echo "  Paceon supports TOTP authentication (Google Authenticator)."
-echo "  This requires scanning a QR code on first launch."
-echo ""
-echo "  1) Enable TOTP  (recommended for shared networks)"
-echo "  2) Skip TOTP    (simpler, owner-only lock still applies)"
-echo ""
-read -p "  Choose [1/2]: " -n 1 -r SECURITY_CHOICE
-echo ""
-
+# Step 4: Done — OTP is off by default for simplicity.
+# Users can enable it later with --enable-otp.
 EXTRA_FLAGS=""
-if [[ "$SECURITY_CHOICE" == "2" ]]; then
-    EXTRA_FLAGS="--use-weak-security"
-    ok "TOTP disabled. First Telegram user to message becomes owner."
-else
-    ok "TOTP enabled. You'll scan a QR code on first launch."
-fi
 
 # Step 5: Accessibility permission check (macOS only)
 if [[ "$OS" == "Darwin" ]]; then
@@ -233,18 +226,18 @@ if [[ "$OS" == "Darwin" ]]; then
 fi
 
 # Step 6: Create launch script
-if [ -n "$ANTHROPIC_KEY" ]; then
+if [[ -n "$LLM_VAR" ]]; then
 cat > run.sh << RUNEOF
 #!/bin/bash
 cd "\$(dirname "\$0")"
-export ANTHROPIC_API_KEY="$ANTHROPIC_KEY"
-exec ./paceon $EXTRA_FLAGS $MGR_FLAGS "\$@"
+export $LLM_VAR="$LLM_KEY"
+exec ./paceon $EXTRA_FLAGS "\$@"
 RUNEOF
 else
 cat > run.sh << RUNEOF
 #!/bin/bash
 cd "\$(dirname "\$0")"
-exec ./paceon $EXTRA_FLAGS $MGR_FLAGS "\$@"
+exec ./paceon $EXTRA_FLAGS "\$@"
 RUNEOF
 fi
 chmod +x run.sh
@@ -287,5 +280,5 @@ echo ""
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     echo ""
     info "Starting paceon..."
-    exec ./paceon $EXTRA_FLAGS
+    exec ./run.sh
 fi
