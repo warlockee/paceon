@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from typing import Any
 
 from utils import ctl_run
@@ -12,11 +14,62 @@ from utils import ctl_run
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Terminal activity tracker (in-memory, resets on restart)
+# ---------------------------------------------------------------------------
+
+_activity: dict[str, tuple[str, float]] = {}  # id -> (tail_content, timestamp)
+_activity_lock = threading.Lock()
+_poll_started = False
+
+def _tail(text: str, n: int = 20) -> str:
+    lines = text.strip().split('\n')
+    return '\n'.join(lines[-n:]) if len(lines) > n else text.strip()
+
+def _track(terminal_id: str, content: str) -> None:
+    tail = _tail(content)
+    now = time.time()
+    with _activity_lock:
+        prev = _activity.get(terminal_id)
+        if prev is None or prev[0] != tail:
+            _activity[terminal_id] = (tail, now)
+
+def _format_ago(terminal_id: str) -> str:
+    with _activity_lock:
+        entry = _activity.get(terminal_id)
+    if entry is None:
+        return ""
+    delta = int(time.time() - entry[1])
+    if delta < 60:
+        return "active just now"
+    if delta < 3600:
+        return f"active {delta // 60}m ago"
+    h = delta // 3600
+    m = (delta % 3600) // 60
+    return f"active {h}h{m}m ago" if m else f"active {h}h ago"
+
+def _poll_loop() -> None:
+    while True:
+        try:
+            terminals = _raw_list_terminals()
+            for t in terminals:
+                out, _, rc = ctl_run(["capture", str(t["id"])])
+                if rc == 0:
+                    _track(t["id"], out)
+        except Exception as e:
+            logger.error("Activity poll error: %s", e)
+        time.sleep(60)
+
+def _ensure_polling() -> None:
+    global _poll_started
+    if not _poll_started:
+        _poll_started = True
+        threading.Thread(target=_poll_loop, daemon=True).start()
+
+# ---------------------------------------------------------------------------
 # Terminal operations
 # ---------------------------------------------------------------------------
 
-def list_terminals() -> list[dict[str, Any]]:
-    """List all available terminals. Returns list of dicts."""
+def _raw_list_terminals() -> list[dict[str, Any]]:
     out, err, rc = ctl_run(["list"])
     if rc != 0:
         logger.error("list_terminals failed (rc=%d): %s", rc, err)
@@ -27,6 +80,15 @@ def list_terminals() -> list[dict[str, Any]]:
         logger.error("list_terminals JSON parse error: %s (output: %s)", e, out[:200])
         return []
 
+def list_terminals() -> list[dict[str, Any]]:
+    _ensure_polling()
+    terminals = _raw_list_terminals()
+    for t in terminals:
+        ago = _format_ago(t["id"])
+        if ago:
+            t["last_active"] = ago
+    return terminals
+
 _CAPTURE_LINES: int = 80  # Roughly one screen worth of output
 
 def capture_terminal(terminal_id: str) -> str:
@@ -34,6 +96,7 @@ def capture_terminal(terminal_id: str) -> str:
     out, err, rc = ctl_run(["capture", str(terminal_id)])
     if rc != 0:
         return f"[Error capturing terminal {terminal_id}: {err}]"
+    _track(terminal_id, out)
     return out
 
 def capture_terminal_tail(terminal_id: str) -> str:

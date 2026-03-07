@@ -227,7 +227,9 @@ IMPORTANT:
             lines: list[str] = []
             for t in terminals:
                 title: str = f" \u2014 {t['title']}" if t.get('title') else ""
-                lines.append(f"Terminal {t['index']} [{t['id']}]: {t['name']}{title}")
+                activity: str = t.get('last_active', '')
+                act_str: str = f" ({activity})" if activity else ""
+                lines.append(f"Terminal {t['index']} [{t['id']}]: {t['name']}{title}{act_str}")
             return "\n".join(lines)
 
         elif tool_name == "read_terminal":
