@@ -16,7 +16,10 @@ from utils import (
     MAX_CONVERSATION_TURNS, MAX_TOOL_ROUNDS, DEFAULT_STABLE_SECONDS,
     DEFAULT_POLL_INTERVAL, MAX_TASK_ITERATIONS,
     MONITOR_INTERVAL, MEMORY_LIMIT_MB, TASK_PRUNE_AGE,
+    is_rate_limit_error, switch_to_fallback, maybe_switch_back,
+    _create_client_for, get_active_provider,
 )
+import utils as _utils
 import llm as llm_mod
 from tools import TOOLS, list_terminals, capture_terminal, capture_terminal_tail, send_keys
 from memory import _init_memory_db, _load_memories, _save_memory, _delete_memory, MEMORY_DB_PATH
@@ -33,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 class Manager:
     def __init__(self) -> None:
-        self.client = create_client()
+        create_client()  # Validate that at least one provider works
         self.conversations: dict[int, list[dict[str, Any]]] = {}
         self.tasks: dict[int, BackgroundTask | SmartTask | QueuedCommand] = {}
         self._conv_locks: dict[int, threading.Lock] = {}
@@ -303,7 +306,7 @@ IMPORTANT:
                 chat_id=chat_id,
                 terminal_id=tool_input["terminal_id"],
                 prompt=tool_input["prompt"],
-                client=self.client,
+                client=_create_client_for(get_active_provider()),
                 description=tool_input.get("description", tool_input["prompt"][:80]),
                 send_text=tool_input.get("send_text", ""),
                 poll_interval=tool_input.get("poll_interval", DEFAULT_POLL_INTERVAL),
@@ -391,11 +394,30 @@ IMPORTANT:
             while tool_rounds < MAX_TOOL_ROUNDS:
                 tool_rounds += 1
                 STATS.inc("api_calls")
-                logger.info("API call round %d", tool_rounds)
 
-                serialized, text_parts, tool_uses, stop = llm_mod.chat(
-                    self.client, MODEL, system_prompt, TOOLS, conv,
-                )
+                # Check if we should switch back to preferred provider
+                maybe_switch_back()
+                client = _create_client_for(get_active_provider())
+                model = _utils.MODEL
+                logger.info("API call round %d (%s/%s)", tool_rounds,
+                            get_active_provider(), model)
+
+                try:
+                    serialized, text_parts, tool_uses, stop = llm_mod.chat(
+                        client, model, system_prompt, TOOLS, conv,
+                    )
+                except Exception as api_err:
+                    if is_rate_limit_error(api_err) and switch_to_fallback():
+                        logger.warning("Rate limited, retrying with %s", get_active_provider())
+                        send_response(chat_id,
+                            f"\U0001f916 Switched to {get_active_provider()} (rate limit).")
+                        client = _create_client_for(get_active_provider())
+                        model = _utils.MODEL
+                        serialized, text_parts, tool_uses, stop = llm_mod.chat(
+                            client, model, system_prompt, TOOLS, conv,
+                        )
+                    else:
+                        raise
 
                 conv.append({"role": "assistant", "content": serialized})
 
@@ -415,7 +437,7 @@ IMPORTANT:
                         result = result[:2000] + "\n...[truncated]...\n" + result[-1500:]
                     results.append((tu_id, tu_name, result))
 
-                conv.append(llm_mod.format_tool_results(self.client, results))
+                conv.append(llm_mod.format_tool_results(client, results))
 
             # Hit max tool rounds
             send_response(chat_id,
